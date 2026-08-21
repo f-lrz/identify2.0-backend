@@ -1,21 +1,27 @@
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from app.core.config import setup_cors
 from app.api.routes import router as api_router
 
-# Instancia a aplicação FastAPI com documentação Swagger configurada
 app = FastAPI(
     title="IDENTIFY 2.0 Backend",
     description="API de Visão Computacional para detecção de podridão vermelha em campos de agave.",
     version="1.0.0"
 )
 
-# Aplica as configurações de CORS
 setup_cors(app)
-
-# Registra os endpoints com o prefixo /api
 app.include_router(api_router, prefix="/api")
 
-# Rota raiz de health check (para confirmar que a API está no ar)
+# Serve a pasta static/
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Rota raiz serve a página de upload/loading/resultado
 @app.get("/")
 async def root():
-    return {"status": "online", "message": "Backend do IDENTIFY 2.0 ativo. Acesse /docs para testar."}
+    return FileResponse("static/index.html")
+
+# Health check - /health
+@app.get("/health")
+async def health():
+    return {"status": "online", "message": "Backend do IDENTIFY 2.0 ativo."}

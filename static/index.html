@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>IDENTIFY 2.0 — Diagnóstico de Agave</title>
+<style>
+  :root {
+    --verde: #2e7d4f;
+    --verde-escuro: #1e5c38;
+    --vermelho: #c0392b;
+    --bg: #f7f6f2;
+    --card: #ffffff;
+    --texto: #2b2b2b;
+    --borda: #ddd;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--texto);
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  header {
+    width: 100%;
+    background: var(--verde-escuro);
+    color: #fff;
+    padding: 20px;
+    text-align: center;
+  }
+  header h1 { margin: 0; font-size: 1.3rem; }
+  header p { margin: 4px 0 0; font-size: 0.85rem; opacity: 0.85; }
+
+  main {
+    width: 100%;
+    max-width: 900px;
+    padding: 32px 16px;
+  }
+
+  .screen { display: none; }
+  .screen.active { display: block; }
+
+  /* --- Tela de upload --- */
+  .dropzone {
+    border: 2px dashed var(--verde);
+    border-radius: 14px;
+    padding: 48px 24px;
+    text-align: center;
+    cursor: pointer;
+    background: var(--card);
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .dropzone:hover, .dropzone.dragover {
+    border-color: var(--verde-escuro);
+    background: #eef7f0;
+  }
+  .dropzone .icon { font-size: 2.5rem; margin-bottom: 8px; }
+  .dropzone p { margin: 4px 0; }
+  .dropzone .hint { color: #777; font-size: 0.85rem; }
+
+  #fileList {
+    margin-top: 16px;
+    font-size: 0.9rem;
+    color: #555;
+  }
+
+  .btn {
+    display: inline-block;
+    background: var(--verde);
+    color: #fff;
+    border: none;
+    padding: 12px 28px;
+    border-radius: 8px;
+    font-size: 1rem;
+    cursor: pointer;
+    margin-top: 20px;
+  }
+  .btn:hover { background: var(--verde-escuro); }
+  .btn:disabled { background: #aaa; cursor: not-allowed; }
+  .btn.secondary {
+    background: transparent;
+    color: var(--verde-escuro);
+    border: 1px solid var(--verde);
+  }
+  .btn.secondary:hover { background: #eef7f0; }
+
+  /* --- Tela de carregamento --- */
+  .loading-box {
+    text-align: center;
+    padding: 64px 24px;
+  }
+  .spinner {
+    width: 56px;
+    height: 56px;
+    border: 5px solid #ddd;
+    border-top-color: var(--verde);
+    border-radius: 50%;
+    margin: 0 auto 20px;
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-box p { color: #555; }
+  #loadingProgress { font-size: 0.85rem; color: #888; margin-top: 8px; }
+
+  /* --- Tela de resultado --- */
+  .results-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .results-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+  }
+  .result-card {
+    background: var(--card);
+    border: 1px solid var(--borda);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .result-card img {
+    width: 100%;
+    display: block;
+    background: #eee;
+  }
+  .result-card .card-footer {
+    padding: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .result-card .filename {
+    font-size: 0.85rem;
+    color: #555;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 60%;
+  }
+  .download-btn {
+    background: var(--verde);
+    color: #fff;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .download-btn:hover { background: var(--verde-escuro); }
+  .error-card {
+    border-color: var(--vermelho);
+    padding: 16px;
+    color: var(--vermelho);
+    font-size: 0.9rem;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🌵 IDENTIFY 2.0</h1>
+  <p>Identificação de podridão vermelha em plantações de Agave</p>
+</header>
+
+<main>
+
+  <!-- TELA 1: UPLOAD -->
+  <section id="screen-upload" class="screen active">
+    <div class="dropzone" id="dropzone">
+      <div class="icon">📤</div>
+      <p><strong>Clique para selecionar</strong> ou arraste as imagens aqui</p>
+      <p class="hint">Aceita JPG, PNG ou WEBP — pode selecionar várias de uma vez</p>
+      <input type="file" id="fileInput" accept="image/*" multiple style="display:none" />
+    </div>
+    <div id="fileList"></div>
+    <button class="btn" id="analyzeBtn" disabled>Analisar imagens</button>
+  </section>
+
+  <!-- TELA 2: CARREGANDO -->
+  <section id="screen-loading" class="screen">
+    <div class="loading-box">
+      <div class="spinner"></div>
+      <p>Analisando imagens com o modelo de visão computacional...</p>
+      <div id="loadingProgress"></div>
+    </div>
+  </section>
+
+  <!-- TELA 3: RESULTADO -->
+  <section id="screen-result" class="screen">
+    <div class="results-header">
+      <h2 style="margin:0;">Resultado da análise</h2>
+      <div>
+        <button class="btn secondary" id="newAnalysisBtn">Nova análise</button>
+        <button class="btn" id="downloadAllBtn">Baixar todas</button>
+      </div>
+    </div>
+    <div class="results-grid" id="resultsGrid"></div>
+  </section>
+
+</main>
+
+<script>
+  // Ajuste aqui se o backend estiver em outro host/porta
+  const API_URL = "/api/analyze";
+
+  const dropzone = document.getElementById("dropzone");
+  const fileInput = document.getElementById("fileInput");
+  const fileListEl = document.getElementById("fileList");
+  const analyzeBtn = document.getElementById("analyzeBtn");
+  const newAnalysisBtn = document.getElementById("newAnalysisBtn");
+  const downloadAllBtn = document.getElementById("downloadAllBtn");
+  const loadingProgress = document.getElementById("loadingProgress");
+  const resultsGrid = document.getElementById("resultsGrid");
+
+  const screens = {
+    upload: document.getElementById("screen-upload"),
+    loading: document.getElementById("screen-loading"),
+    result: document.getElementById("screen-result"),
+  };
+
+  let selectedFiles = [];
+  let processedResults = []; // { filename, dataUrl }
+
+  function showScreen(name) {
+    Object.values(screens).forEach((s) => s.classList.remove("active"));
+    screens[name].classList.add("active");
+  }
+
+  // --- seleção de arquivos ---
+  dropzone.addEventListener("click", () => fileInput.click());
+  dropzone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropzone.classList.add("dragover");
+  });
+  dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
+  dropzone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropzone.classList.remove("dragover");
+    setFiles(e.dataTransfer.files);
+  });
+  fileInput.addEventListener("change", (e) => setFiles(e.target.files));
+
+  function setFiles(fileListObj) {
+    selectedFiles = Array.from(fileListObj).filter((f) => f.type.startsWith("image/"));
+    if (selectedFiles.length === 0) {
+      fileListEl.textContent = "Nenhuma imagem válida selecionada.";
+      analyzeBtn.disabled = true;
+      return;
+    }
+    fileListEl.textContent = `${selectedFiles.length} imagem(ns) selecionada(s): ` +
+      selectedFiles.map((f) => f.name).join(", ");
+    analyzeBtn.disabled = false;
+  }
+
+  // --- análise ---
+  analyzeBtn.addEventListener("click", async () => {
+    showScreen("loading");
+    processedResults = [];
+    let done = 0;
+
+    const updateProgress = () => {
+      loadingProgress.textContent = `${done} de ${selectedFiles.length} imagem(ns) processada(s)`;
+    };
+    updateProgress();
+
+    const tasks = selectedFiles.map(async (file) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      try {
+        const resp = await fetch(API_URL, { method: "POST", body: formData });
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.detail || `Erro ao processar ${file.name}`);
+        }
+        const data = await resp.json();
+        processedResults.push({ filename: file.name, dataUrl: data.image_data, error: null });
+      } catch (err) {
+        processedResults.push({ filename: file.name, dataUrl: null, error: err.message });
+      } finally {
+        done++;
+        updateProgress();
+      }
+    });
+
+    await Promise.all(tasks);
+    renderResults();
+    showScreen("result");
+  });
+
+  function renderResults() {
+    resultsGrid.innerHTML = "";
+    processedResults.forEach((result, idx) => {
+      const card = document.createElement("div");
+      card.className = "result-card";
+
+      if (result.error) {
+        card.classList.add("error-card");
+        card.innerHTML = `<strong>${result.filename}</strong><p>${result.error}</p>`;
+      } else {
+        card.innerHTML = `
+          <img src="${result.dataUrl}" alt="${result.filename}" />
+          <div class="card-footer">
+            <span class="filename" title="${result.filename}">${result.filename}</span>
+            <button class="download-btn" data-idx="${idx}">Baixar</button>
+          </div>
+        `;
+      }
+      resultsGrid.appendChild(card);
+    });
+
+    resultsGrid.querySelectorAll(".download-btn").forEach((btn) => {
+      btn.addEventListener("click", () => downloadResult(processedResults[btn.dataset.idx]));
+    });
+  }
+
+  function downloadResult(result) {
+    const link = document.createElement("a");
+    link.href = result.dataUrl;
+    link.download = `diagnostico_${result.filename}`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
+  downloadAllBtn.addEventListener("click", () => {
+    processedResults.forEach((r) => {
+      if (!r.error) downloadResult(r);
+    });
+  });
+
+  newAnalysisBtn.addEventListener("click", () => {
+    selectedFiles = [];
+    processedResults = [];
+    fileInput.value = "";
+    fileListEl.textContent = "";
+    analyzeBtn.disabled = true;
+    showScreen("upload");
+  });
+</script>
+
+</body>
+</html>
