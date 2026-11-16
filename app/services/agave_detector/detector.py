@@ -48,6 +48,12 @@ CONF_PRE_ANOTACAO = 0.20  # so para gerar rascunho de rotulo, nao para exibir
 # vai falhar em silencio: as plantas ficam pequenas demais para ele.
 LARGURA_MINIMA_ESPERADA = 3000
 
+# O treino viu plantas de ~110 a ~320px de lado. Foto tirada com o drone muito
+# baixo deixa a planta com 400-800px: o detector fragmenta umas e perde outras,
+# e a contagem deixa de ser confiavel (medido no voo de 10/11/2026: numa foto
+# com plantas de ~650px, metade das plantas sumiu ou virou pedaco).
+LADO_MEDIANO_MAXIMO = 400
+
 Imagem = Union[str, Path, bytes, bytearray, np.ndarray]
 
 # BGR (e OpenCV, nao RGB).
@@ -210,6 +216,19 @@ class DetectorAgave:
         c = self.conf if conf is None else conf
         with self._trava:                 # serializa: ver comentario no __init__
             det = self._detectar_array(img, c)
+
+        if len(det) >= 5:
+            lado = float(np.median(np.maximum(det[:, 2] - det[:, 0],
+                                              det[:, 3] - det[:, 1])))
+            if lado > LADO_MEDIANO_MAXIMO:
+                avisos.append(
+                    f"as plantas aparecem com ~{lado:.0f}px nesta foto: o drone "
+                    f"provavelmente voou mais baixo que o normal. O modelo foi "
+                    f"treinado com plantas de ~110 a ~320px; aqui ele tende a "
+                    f"fragmentar ou perder plantas, entao a contagem e a "
+                    f"triagem de saude nao sao confiaveis. Use fotos da altura "
+                    f"de voo padrao."
+                )
         return {
             "total": int(len(det)),
             "largura": int(w),
