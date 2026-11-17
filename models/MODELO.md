@@ -17,9 +17,10 @@ Localizar plantas de agave em fotos aereas de drone. Uma caixa por planta.
 
 **Nao diagnostica doenca.** O modelo tem uma classe so. Ele nao distingue planta
 sadia de planta doente, e nao ha como extrair essa informacao da saida dele.
-O classificador de saude e uma etapa separada, ainda em construcao.
 
-Se alguma tela exibir "doente" com base neste modelo, esta errada.
+A suspeita de doenca vem de OUTRO modelo, o classificador de saude
+(`classificador_saude.pt`), que roda sobre as caixas deste. Ficha dele em
+[`MODELO_SAUDE.md`](MODELO_SAUDE.md).
 
 ## Dados de treino
 
@@ -68,7 +69,14 @@ rascunho de rotulo, nunca para exibir numero.
    primeiras, 110px nas ultimas). Uma das 42 imagens (`imagem (22)`) foi
    revisada apenas superficialmente.
 5. **Nao foi testado em imagem diagonal.** Uma foto do voo foi descartada por
-   ter sido tirada em angulo; o modelo nunca viu esse caso.
+   ter sido tirada em angulo; o modelo nunca viu esse caso. No voo de
+   10/11/2026, mais 4 fotos em angulo foram descartadas pelo mesmo motivo.
+6. **Foto tirada baixo demais quebra a deteccao.** No voo de 10/11/2026 parte
+   das fotos saiu com plantas de 400 a 800px (contra 110-320px do treino). Ali o
+   detector fragmenta umas plantas e perde outras: numa foto com plantas de
+   ~650px, achou 21 onde havia bem mais. O detector emite aviso quando o lado
+   mediano das caixas passa de 400px; nesse caso, nao exiba a contagem como
+   confiavel.
 
 ## Reproducao
 

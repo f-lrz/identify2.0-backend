@@ -4,19 +4,24 @@ Contrato para quem vai consumir a API no frontend.
 
 > ## Leia isto antes de desenhar a tela
 >
-> **O modelo detecta a presença de agave. Ele NÃO diagnostica doença.**
+> A API faz duas coisas:
 >
-> Uma caixa na imagem significa "existe uma planta de agave aqui" — nada mais.
-> O modelo tem uma classe só (`agave`) e não distingue planta doente de sadia.
+> 1. **Detecta as agaves**: uma caixa por planta, e a contagem.
+> 2. **Faz a triagem de saúde**: cada planta recebe `prob_doente` (0 a 1), a
+>    chance de estar doente segundo o modelo.
 >
-> A classificação de podridão vermelha é a **etapa 2** do projeto, ainda em
-> desenvolvimento. Enquanto ela não existir, nenhum texto da interface deve
-> dizer "doente", "sadia", "podridão", "diagnóstico" ou "%" de doença com base
-> nesta resposta.
+> **A triagem não é diagnóstico.** Ela aponta quais plantas o agrônomo deve
+> conferir em campo, começando pelas mais suspeitas. Os rótulos de treino vêm de
+> julgamento visual nas fotos aéreas, sem confirmação de laboratório.
 >
-> Sugestão de rótulo honesto: *"N plantas de agave detectadas"*.
+> Rótulo honesto para a tela: *"N plantas com suspeita de doença — conferir em
+> campo"*. Evite "N plantas doentes", "diagnóstico" e "laudo".
 >
-> Detalhes e limitações em [`models/MODELO.md`](models/MODELO.md).
+> Planta **seca** (morta, ressecada) **não** conta como doente: o modelo foi
+> ensinado assim de propósito.
+>
+> Detalhes e limitações: [`models/MODELO.md`](models/MODELO.md) (detector) e
+> [`models/MODELO_SAUDE.md`](models/MODELO_SAUDE.md) (saúde).
 
 ---
 
@@ -39,16 +44,31 @@ const data = await resp.json();
 
 ### Resposta `200`
 
+Exemplo (a lista `plantas` foi encurtada; na resposta real vêm todas):
+
 ```json
 {
-  "filename": "DJI_0990.JPG",
+  "filename": "DJI_0125.JPG",
   "content_type": "image/jpeg",
   "image_data": "data:image/jpeg;base64,/9j/4AAQSkZJRgABA...",
-  "total_agaves": 678,
+  "total_agaves": 244,
   "largura": 5472,
   "altura": 3078,
   "conf": 0.3,
-  "avisos": []
+  "avisos": [],
+  "saude_ativa": true,
+  "limiar_doente": 0.5,
+  "doentes": 2,
+  "sadias": 242,
+  "taxa_doenca": 0.0082,
+  "plantas": [
+    {"x1": 3441, "y1": 596, "x2": 3623, "y2": 763, "conf": 0.5549,
+     "prob_doente": 0.9998, "saude": "doente"},
+    {"x1": 1201, "y1": 2210, "x2": 1398, "y2": 2401, "conf": 0.7012,
+     "prob_doente": 0.654, "saude": "doente"},
+    {"x1": 4012, "y1": 88, "x2": 4230, "y2": 301, "conf": 0.8123,
+     "prob_doente": 0.0015, "saude": "sadia"}
+  ]
 }
 ```
 
@@ -56,11 +76,29 @@ const data = await resp.json();
 |---|---|---|
 | `filename` | string | o nome que veio no upload |
 | `content_type` | string | o MIME que veio no upload |
-| `image_data` | string | **data-URI pronto para `<img src>`**: a imagem original com as caixas desenhadas, já em base64 |
+| `image_data` | string | **data-URI pronto para `<img src>`**: a foto com **só as plantas suspeitas** marcadas (caixa vermelha com o `prob_doente` escrito). As sadias não são desenhadas, mas estão todas em `plantas` (para desenhá-las também: `AGAVE_MOSTRAR_SADIAS=1` no servidor) |
 | `total_agaves` | int | quantas plantas foram detectadas |
 | `largura`, `altura` | int | dimensões da imagem enviada, em pixels |
-| `conf` | float | limiar de confiança usado (ver abaixo) |
+| `conf` | float | limiar do detector (ver "Sobre o `conf`") |
 | `avisos` | string[] | **se não estiver vazio, mostre ao usuário** (ver abaixo) |
+| `saude_ativa` | bool | `false` se o servidor rodar só com detecção (`AGAVE_SAUDE=0`); aí os campos de saúde vêm `null` |
+| `limiar_doente` | float | corte usado para `saude` e `doentes` (padrão 0,5) |
+| `doentes` | int | plantas com `prob_doente >= limiar_doente`: **suspeitas**, não confirmadas |
+| `sadias` | int | o resto |
+| `taxa_doenca` | float | `doentes / total_agaves`, de 0 a 1 |
+| `plantas` | object[] | **todas** as plantas, **ordenadas da mais suspeita para a menos** |
+
+Cada item de `plantas`:
+
+| Campo | Tipo | O que é |
+|---|---|---|
+| `x1`, `y1`, `x2`, `y2` | int | a caixa, em pixels da imagem enviada (origem no canto superior esquerdo) |
+| `conf` | float | confiança do **detector** de que existe uma agave ali |
+| `prob_doente` | float | 0 a 1: suspeita de doença. **É o número da triagem** |
+| `saude` | string | `"doente"` ou `"sadia"`, só aplicando o corte `limiar_doente` ao `prob_doente` |
+
+Não confunda `conf` com `prob_doente`. `conf` diz se existe planta ali;
+`prob_doente` diz se a planta parece doente.
 
 O `image_data` já serve tanto para exibir quanto para o botão de download:
 
@@ -84,12 +122,30 @@ serem mostradas ao usuário direto.
 
 ---
 
+## A tela de triagem
+
+O jeito certo de usar a saúde é uma **fila de revisão**, não um número solto:
+
+- `plantas` já vem ordenada. Mostre as primeiras (ex.: as 10 mais suspeitas,
+  ou todas com `prob_doente >= 0.3`) com um recorte da foto em volta da caixa,
+  para o agrônomo marcar "confirmei" ou "descartei".
+- A planta com `prob_doente` 0,45 aparece como `"sadia"` pelo corte de 0,5,
+  mas é justamente a que mais vale olhar. Se a tela tiver um controle de
+  sensibilidade, filtre por `prob_doente` no front, sem nova requisição.
+- Na maioria das fotos `doentes` é 0, 1 ou 2: a doença é rara (cerca de 1
+  planta a cada 100). Mostrar "0 suspeitas" é um resultado normal, não erro.
+
+Para desenhar as caixas no front em vez de usar o `image_data`, as
+coordenadas estão em pixels da imagem **original**. Escale pela razão entre o
+tamanho exibido e `largura`/`altura`.
+
 ## Três coisas que vão afetar a sua tela
 
-### 1. Demora ~11 segundos por imagem
+### 1. Demora ~12 segundos por imagem
 
 Não é exagero nem bug: a imagem de drone é recortada em 45 pedaços e cada um
-passa pelo modelo. Medido em CPU de 12 núcleos.
+passa pelo detector (~11 s); depois cada planta passa pelo classificador de
+saúde (~1 s). Medido em CPU de 12 núcleos.
 
 Consequências:
 
@@ -111,12 +167,16 @@ o que infla o tamanho em ~33%.
 - Em localhost é instantâneo. Pela internet, não.
 - Não guarde muitas dessas strings em memória no navegador: 10 fotos = ~76 MB
   de JavaScript heap.
+- A lista `plantas` é leve em comparação: ~100 bytes por planta, cerca de
+  25 KB numa foto com 250 plantas.
 - Se isso virar problema, fale com o backend: a alternativa é a API salvar a
   imagem e devolver uma URL. Muda o contrato, então é conversa, não ajuste.
 
 ### 3. O campo `avisos` não é decorativo
 
-Hoje existe um aviso, e ele importa: **imagem redimensionada**.
+Hoje existem dois avisos, e os dois importam.
+
+#### Imagem redimensionada
 
 O modelo foi treinado em fotos de 5472×3078, onde a planta tem ~130px. Se a
 imagem chegar reduzida, as plantas ficam pequenas demais e a detecção despenca
@@ -133,6 +193,14 @@ Metade desaparece silenciosamente. Então:
   Mande o arquivo original do drone.
 - Se `avisos` vier preenchido, mostre o texto. Ele já vem escrito em português
   e explica o que o usuário deve fazer.
+
+#### Foto tirada baixo demais
+
+O modelo aprendeu plantas de ~110 a ~320 px. Se o drone voou mais baixo e as
+plantas aparecem com 400 px ou mais, o detector fragmenta umas e perde outras,
+e a contagem e a triagem deixam de ser confiáveis. Aconteceu em 4 das 14 fotos
+de teste do voo de 10/11/2026. Nesse caso vem um aviso começando por *"as plantas
+aparecem com ~656px nesta foto"*: mostre-o junto do resultado.
 
 ---
 
@@ -157,6 +225,8 @@ O campo vem na resposta para registro; o frontend não escolhe o valor.
 
 ## Honestidade sobre a precisão
 
+### Detecção (contagem)
+
 Os números acima foram medidos em **2 imagens de validação** (756 plantas
 contadas à mão). São honestos, mas é uma amostra pequena: não trate o erro de
 4,9% como garantia num voo novo, e evite exibir a contagem sem a palavra
@@ -164,3 +234,21 @@ contadas à mão). São honestos, mas é uma amostra pequena: não trate o erro 
 
 O modelo foi treinado numa plantação específica, com um drone específico. Em
 outro sítio ou outra câmera, o desempenho cai.
+
+### Saúde (triagem)
+
+Validação em recortes de fotos que o modelo não viu (53 plantas doentes):
+
+| Corte | Doentes achadas | Das marcadas, quantas eram doentes |
+|---|---|---|
+| 0,3 | 85% | 78% |
+| **0,5 (padrão)** | **81%** | **81%** |
+| 0,7 | 74% | 81% |
+
+Na prática: de cada 5 plantas doentes, o modelo aponta cerca de 4, e cerca de
+1 em cada 5 suspeitas é alarme falso. Ordenando por `prob_doente`, os 20% mais
+suspeitos contêm 51 das 53 doentes. Por isso a fila de revisão funciona melhor
+que o corte fixo.
+
+Amostra pequena, um sítio só, rótulos visuais. Os números completos estão em
+[`models/MODELO_SAUDE.md`](models/MODELO_SAUDE.md).

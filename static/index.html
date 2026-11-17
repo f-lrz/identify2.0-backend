@@ -208,7 +208,9 @@
 </main>
 
 <script>
-  // Ajuste aqui se o backend estiver em outro host/porta
+  // Página de TESTE servida pelo próprio backend; o front oficial é o
+  // repositório identify2.0-frontend. Mostra só a imagem marcada.
+  // Caminho relativo: funciona porque a página e a API vêm do mesmo servidor.
   const API_URL = "/api/analyze";
 
   const dropzone = document.getElementById("dropzone");
@@ -234,7 +236,6 @@
     screens[name].classList.add("active");
   }
 
-  // --- seleção de arquivos ---
   dropzone.addEventListener("click", () => fileInput.click());
   dropzone.addEventListener("dragover", (e) => {
     e.preventDefault();
@@ -260,7 +261,6 @@
     analyzeBtn.disabled = false;
   }
 
-  // --- análise ---
   analyzeBtn.addEventListener("click", async () => {
     showScreen("loading");
     processedResults = [];
@@ -271,6 +271,9 @@
     };
     updateProgress();
 
+    // Dispara todas as fotos ao mesmo tempo. O servidor processa uma por vez
+    // (trava interna), então com muitas fotos as últimas esperam e podem
+    // estourar o timeout. O front oficial envia em sequência.
     const tasks = selectedFiles.map(async (file) => {
       const formData = new FormData();
       formData.append("file", file);
